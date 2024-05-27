@@ -174,5 +174,189 @@ const Toast = (props: ToastProps) => {
       lastCloseTimerStartTimeRef.current = new Date().getTime()
     }
 
-  })
+    const startTimer = () => {
+      if (remainingTime === Infinity) return
+      closeTimerStartTimeRef.current = new Date().getTime();
+      // let the toast know it has started
+      timeoutId = setTimeout(() => {
+        toast.onAutoClose?.(toast);
+        deleteToast();
+      }, remainingTime)
+    }
+
+    if (expanded || interacting || (pauseWhenPageIsHidden && isDocumentHidden)) {
+      pauseTimer();
+    } else {
+      startTimer();
+    }
+    return () => clearTimeout(timeoutId)
+  }, [
+    expanded,
+    interacting,
+    expandByDefault,
+    toast,
+    duration,
+    deleteToast,
+    toast.promise,
+    toastType,
+    pauseWhenPageIsHidden,
+    isDocumentHidden,
+  ])
+
+  React.useEffect(() => {
+    const toastNode = toastRef.current
+    if (toastNode) {
+      const height = toastNode.getBoundingClientRect().height
+      setInitialHeight(height)
+      setHeights((h) => [{ toastId: toast.id, height, position: toast.position }, ...h])
+    }
+  }, [setHeights, toast.id])
+
+  React.useEffect(() => {
+    if (toast.delete) {
+      deleteToast();
+    }
+  }, [deleteToast, toast.delete])
+
+  function getLoadingIcon() {
+    if (icons?.loading) {
+      return (
+        <div className="orient-loader" data-visible={toastType === 'loading'}>
+          {icons.loading}
+        </div>
+      )
+    }
+    if (loadingIconProp) {
+      return (
+        <div className="orient-loader" data-visible={toastType === 'loading'}>
+          {loadingIconProp}
+        </div>
+      )
+    }
+    return <Loader visible={toastType === 'loading'} />
+  }
+
+  function sanitizeHTML(html: string): { __html: string } {
+    return { __html: DOMPurify.sanitize(html) }
+  }
+
+  return (
+    <li
+      aria-live={toast.important ? 'assertive' : 'polite'}
+      aria-atomic='true'
+      role='status'
+      tabIndex={0}
+      ref={toastRef}
+      className={cn(
+        className,
+        toastClassname,
+        classNames?.toast,
+        toast?.classNames?.toast,
+        classNames?.default,
+        classNames?.[toastType],
+        toast?.classNames?.[toastType],
+      )}
+      data-orient-toast=""
+      data-rich-colors={toast.richColors ?? defaultRichColors}
+      data-styled={!Boolean(toast.jsx || toast.unstyled || unstyled)}
+      data-mounted={mounted}
+      data-promise={Boolean(toast.promise)}
+      data-removed={removed}
+      data-visible={isVisible}
+      data-y-position={y}
+      data-x-position={x}
+      data-index={index}
+      data-front={isFront}
+      data-swiping={swiping}
+      data-dismissible={dismissible}
+      data-type={toastType}
+      data-invert={invert}
+      data-swipe-out={swipeOut}
+      data-expanded={Boolean(expanded || (expandByDefault && mounted))}
+      style={
+        {
+          '--index': index,
+          '--toasts-before': index,
+          '--z-index': toasts.length - index,
+          '--offset': `${removed ? offsetBeforeRemove : offset.current}px`,
+          '--initial-height': expandByDefault ? 'auto' : `${initialHeight}px`,
+          ...style,
+          ...toast.style,
+        } as React.CSSProperties
+      }
+      onPointerDown={(event) => {
+        if (disabled || !dismissible) return
+        dragStartTime.current = new Date()
+        setOffsetBeforeRemove(offset.current)
+        ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
+        if ((event.target as HTMLElement).tagName === 'BUTTON') return
+        setSwiping(true)
+        pointerStartRef.current = { x: event.clientX, y: event.clientY }
+      }}
+      onPointerUp={() => {
+        if (swipeOut || !dismissible) return
+        pointerStartRef.current = null
+        const swipeAmount = Number(toastRef.current?.style.getPropertyValue('--swipe-amount').replace('px', '') || 0)
+        const timeTaken = new Date().getTime() - dragStartTime.current?.getTime()
+        const velocity = Math.abs(swipeAmount) / timeTaken
+        // remove only if threshold is met
+        if (Math.abs(swipeAmount) >= SWIPE_THRESHOLD || velocity > 0.11) {
+          setOffsetBeforeRemove(offset.current)
+          toast.onDismiss?.(toast)
+          deleteToast()
+          setSwipeOut(true)
+          return
+        }
+        toastRef.current?.style.setProperty('--swipe-amount', '0px')
+        setSwiping(false)
+      }}
+      onPointerMove={(event) => {
+        if (!pointerStartRef.current || !dismissible) return
+        const yPosition = event.clientY - pointerStartRef.current.y
+        const xPosition = event.clientX - pointerStartRef.current.x
+        const clamp = y === 'top' ? Math.min : Math.max
+        const clampedY = clamp(0, yPosition)
+        const swipeStartThreshold = event.pointerType === 'touch' ? 10 : 2
+        const isAllowedToSwipe = Math.abs(clampedY) > swipeStartThreshold
+        if (isAllowedToSwipe) {
+          toastRef.current?.style.setProperty('--swipe-amount', `${yPosition}px`)
+        } else if (Math.abs(xPosition) > swipeStartThreshold) {
+          pointerStartRef.current = null
+        }
+      }}
+    >
+      {closeButton && !toast.jsx ? (
+        <button
+          aria-label={closeButtonAriaLabel}
+          data-disabled={disabled}
+          data-close-button
+          onClick={
+            disabled || !dismissible
+              ? () => {}
+              : () => {
+                  deleteToast();
+                  toast.onDismiss?.(toast);
+                }
+          }
+          className={cn(classNames?.closeButton, toast?.classNames?.closeButton)}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      ) : null}
+    </li>
+  )
+
 }
