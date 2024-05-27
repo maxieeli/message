@@ -109,7 +109,7 @@ const Toast = (props: ToastProps) => {
   const closeTimerStartTimeRef = React.useRef(0)
   const offset = React.useRef(0)
   const lastCloseTimerStartTimeRef = React.useRef(0)
-  const pointerStartRef = React.useRef<{ x: number y: number } | null>(null)
+  const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null)
   const [y, x] = position.split('-')
   const toastsHeightBefore = React.useMemo(() => {
     return heights.reduce((prev, curr, reducerIndex) => {
@@ -149,4 +149,30 @@ const Toast = (props: ToastProps) => {
     })
   }, [mounted, toast.title, toast.description, setHeights, toast.id])
 
+  const deleteToast = React.useCallback(() => {
+    // save the offset for the exit swipe animation
+    setRemoved(true)
+    setOffsetBeforeRemove(offset.current)
+    setHeights((h) => h.filter((height) => height.toastId !== toast.id))
+    setTimeout(() => {
+      removeToast(toast)
+    }, TIME_BEFORE_UNMOUNT)
+  }, [toast, removeToast, setHeights, offset])
+
+  React.useEffect(() => {
+    if ((toast.promise && toastType === 'loading') || toast.duration === Infinity || toast.type === 'loading') return
+    let timeoutId: NodeJS.Timeout
+    let remainingTime = duration
+
+    // pause the timer on each hover
+    const pauseTimer = () => {
+      if (lastCloseTimerStartTimeRef.current < closeTimerStartTimeRef.current) {
+        // get the elapsed time since the timer started
+        const elapsedTime = new Date().getTime() - closeTimerStartTimeRef.current
+        remainingTime = remainingTime - elapsedTime
+      }
+      lastCloseTimerStartTimeRef.current = new Date().getTime()
+    }
+
+  })
 }
