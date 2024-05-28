@@ -330,8 +330,7 @@ const Toast = (props: ToastProps) => {
           aria-label={closeButtonAriaLabel}
           data-disabled={disabled}
           data-close-button
-          onClick={
-            disabled || !dismissible
+          onClick={disabled || !dismissible
               ? () => {}
               : () => {
                   deleteToast();
@@ -356,7 +355,129 @@ const Toast = (props: ToastProps) => {
           </svg>
         </button>
       ) : null}
+      {toast.jsx || React.isValidElement(toast.title) ? (
+        toast.jsx || toast.title
+      ) : (
+        <>
+          {toastType || toast.icon || toast.promise ? (
+            <div data-icon="" className={cn(classNames?.icon, toast?.classNames?.icon)}>
+              {toast.promise || (toast.type === 'loading' && !toast.icon) ? toast.icon || getLoadingIcon() : null}
+              {toast.type !== 'loading' ? toast.icon || icons?.[toastType] || getAsset(toastType) : null}
+            </div>
+          ) : null}
+          <div data-content="" className={cn(classNames?.content, toast?.classNames?.content)}>
+            <div
+              data-title=""
+              className={cn(classNames?.title, toast?.classNames?.title)}
+              dangerouslySetInnerHTML={sanitizeHTML(toast.title as string)}
+            />
+            {toast.description ? (
+              <div
+                data-description=""
+                className={cn(
+                  descriptionClassName,
+                  toastDescriptionClassname,
+                  classNames?.description,
+                  toast?.classNames?.description,
+                )}
+                dangerouslySetInnerHTML={
+                  typeof toast.description === 'string' ? sanitizeHTML(toast.description as string) : undefined
+                }
+              >
+                {typeof toast.description === 'object' ? toast.description : null}
+              </div>
+            ) : null}
+          </div>
+          {React.isValidElement(toast.cancel) ? (
+            toast.cancel
+          ) : toast.cancel && isAction(toast.cancel) ? (
+            <button
+              data-button
+              data-cancel
+              style={toast.cancelButtonStyle || cancelButtonStyle}
+              onClick={(event) => {
+                // We need to check twice because typescript
+                if (!isAction(toast.cancel)) return;
+                if (!dismissible) return;
+                toast.cancel.onClick?.(event);
+                deleteToast();
+              }}
+              className={cn(classNames?.cancelButton, toast?.classNames?.cancelButton)}
+            >
+              {toast.cancel.label}
+            </button>
+          ) : null}
+
+          {React.isValidElement(toast.action) ? (
+            toast.action
+          ) : toast.action && isAction(toast.action) ? (
+            <button
+              data-button
+							data-action
+              style={toast.actionButtonStyle || actionButtonStyle}
+              onClick={(event) => {
+                // We need to check twice because typescript
+                if (!isAction(toast.action)) return;
+                if (event.defaultPrevented) return;
+                toast.action.onClick?.(event);
+                deleteToast();
+              }}
+              className={cn(classNames?.actionButton, toast?.classNames?.actionButton)}
+            >
+              {toast.action.label}
+            </button>
+          ) : null}
+        </>
+      )}
     </li>
   )
+}
 
+function getDocumentDirection(): ToasterProps['dir'] {
+  if (typeof window === 'undefined') return 'ltr'
+  if (typeof document === 'undefined') return 'ltr' // For Fresh purpose
+  const dirAttribute = document.documentElement.getAttribute('dir')
+  if (dirAttribute === 'auto' || !dirAttribute) {
+    return window.getComputedStyle(document.documentElement).direction as ToasterProps['dir']
+  }
+  return dirAttribute as ToasterProps['dir'];
+}
+
+const Toaster = (props: ToasterProps) => {
+  const {
+    invert,
+    position = 'bottom-right',
+    hotkey = ['altKey', 'KeyT'],
+    expand,
+    closeButton,
+    className,
+    offset,
+    theme = 'light',
+    richColors,
+    duration,
+    style,
+    visibleToasts = VISIBLE_TOASTS_AMOUNT,
+    toastOptions,
+    dir = getDocumentDirection(),
+    gap = GAP,
+    loadingIcon,
+    icons,
+    containerAriaLabel = 'Notifications',
+    pauseWhenPageIsHidden,
+    cn = _cn,
+  } = props;
+
+  const [toasts, setToasts] = React.useState<ToastT[]>([])
+  const possiblePositions = React.useMemo(() => {
+    return Array.from(
+      new Set([position].concat(toasts.filter((toast) => toast.position).map((toast) => toast.position))),
+    )
+  }, [toasts, position])
+  const [heights, setHeights] = React.useState<HeightT[]>([]);
+  const [expanded, setExpanded] = React.useState(false);
+  const [interacting, setInteracting] = React.useState(false);
+
+  return (
+    
+  )
 }
