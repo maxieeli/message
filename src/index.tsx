@@ -433,16 +433,6 @@ const Toast = (props: ToastProps) => {
   )
 }
 
-function getDocumentDirection(): ToasterProps['dir'] {
-  if (typeof window === 'undefined') return 'ltr'
-  if (typeof document === 'undefined') return 'ltr' // For Fresh purpose
-  const dirAttribute = document.documentElement.getAttribute('dir')
-  if (dirAttribute === 'auto' || !dirAttribute) {
-    return window.getComputedStyle(document.documentElement).direction as ToasterProps['dir']
-  }
-  return dirAttribute as ToasterProps['dir'];
-}
-
 const Toaster = (props: ToasterProps) => {
   const {
     invert,
@@ -473,11 +463,216 @@ const Toaster = (props: ToasterProps) => {
       new Set([position].concat(toasts.filter((toast) => toast.position).map((toast) => toast.position))),
     )
   }, [toasts, position])
-  const [heights, setHeights] = React.useState<HeightT[]>([]);
-  const [expanded, setExpanded] = React.useState(false);
-  const [interacting, setInteracting] = React.useState(false);
+  const [heights, setHeights] = React.useState<HeightT[]>([])
+  const [expanded, setExpanded] = React.useState(false)
+  const [interacting, setInteracting] = React.useState(false)
+  const [actualTheme, setActualTheme] = React.useState(
+    theme !== 'system'
+      ? theme
+      : typeof window !== 'undefined'
+      ? window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+      : 'light',
+  )
+  const listRef = React.useRef<HTMLOListElement>(null)
+  const hotkeyLabel = hotkey.join('+').replace(/Key/g, '').replace(/Digit/g, '')
+  const lastFocusedElementRef = React.useRef<HTMLElement>(null)
+  const isFocusWithinRef = React.useRef(false)
+
+  const removeToast = React.useCallback(
+    (toast: ToastT) => setToasts((toasts) => toasts.filter(({ id }) => id !== toast.id)),
+    []
+  )
+
+  React.useEffect(() => {
+    return ToastState.subscribe((toast) => {
+      if ((toast as ToastToDismiss).dismiss) {
+        setToasts((toasts) => toasts.map((t) => (t.id === toast.id ? { ...t, delete: true } : t)))
+        return
+      }
+
+      // prevent batching temp solution
+      setTimeout(() => {
+        ReactDOM.flushSync(() => {
+          setToasts((toasts) => {
+            const indexOfExistingToast = toasts.findIndex((t) => t.id === toast.id)
+            // update the toast if it already exists
+            if (indexOfExistingToast !== -1) {
+              return [
+                ...toasts.slice(0, indexOfExistingToast),
+                { ...toasts[indexOfExistingToast], ...toast },
+                ...toasts.slice(indexOfExistingToast + 1),
+              ]
+            }
+            return [toast, ...toasts]
+          })
+        })
+      })
+    })
+  }, [])
+
+  React.useEffect(() => {
+    if (theme !== 'system') {
+      setActualTheme(theme)
+      return
+    }
+    if (theme === 'system') {
+      // check if current preference is dark
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        // it's currently dark
+        setActualTheme('dark')
+      } else {
+        // it's not dark
+        setActualTheme('light')
+      }
+    }
+    if (typeof window === 'undefined') return
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ({ matches }) => {
+      if (matches) {
+        setActualTheme('dark')
+      } else {
+        setActualTheme('light')
+      }
+    })
+  }, [theme])
+
+  React.useEffect(() => {
+    if (toasts.length <= 1) {
+      setExpanded(false)
+    }
+  }, [toasts])
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isHotkeyPressed = hotkey.every((key) => (event as any)[key] || event.code === key)
+      if (isHotkeyPressed) {
+        setExpanded(true)
+        listRef.current?.focus()
+      }
+      if (
+        event.code === 'Escape' &&
+        (document.activeElement === listRef.current || listRef.current?.contains(document.activeElement))
+      ) {
+        setExpanded(false)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [hotkey])
+
+  React.useEffect(() => {
+    if (listRef.current) {
+      return () => {
+        if (lastFocusedElementRef.current) {
+          lastFocusedElementRef.current.focus({ preventScroll: true })
+          lastFocusedElementRef.current = null
+          isFocusWithinRef.current = false
+        }
+      }
+    }
+  }, [listRef.current])
+
+  if (!toasts.length) return null
 
   return (
-    
+    <section aria-label={`${containerAriaLabel} ${hotkeyLabel}`} tabIndex={-1}>
+      {possiblePositions.map((position, index) => {
+        const [y, x] = position.split('-')
+        return (
+          <ol
+            key={position}
+            dir={dir === 'auto' ? getDocumentDirection() : dir}
+            tabIndex={-1}
+            ref={listRef}
+            className={className}
+            data-sonner-toaster
+            data-theme={actualTheme}
+            data-y-position={y}
+            data-x-position={x}
+            style={
+              {
+                '--front-toast-height': `${heights[0]?.height || 0}px`,
+                '--offset': typeof offset === 'number' ? `${offset}px` : offset || VIEWPORT_OFFSET,
+                '--width': `${TOAST_WIDTH}px`,
+                '--gap': `${gap}px`,
+                ...style,
+              } as React.CSSProperties
+            }
+            onBlur={(event) => {
+              if (isFocusWithinRef.current && !event.currentTarget.contains(event.relatedTarget)) {
+                isFocusWithinRef.current = false
+                if (lastFocusedElementRef.current) {
+                  lastFocusedElementRef.current.focus({ preventScroll: true })
+                  lastFocusedElementRef.current = null
+                }
+              }
+            }}
+            onFocus={(event) => {
+              const isNotDismissible = event.target instanceof HTMLElement && event.target.dataset.dismissible === 'false'
+              if (isNotDismissible) return
+              if (!isFocusWithinRef.current) {
+                isFocusWithinRef.current = true
+                lastFocusedElementRef.current = event.relatedTarget as HTMLElement
+              }
+            }}
+            onMouseEnter={() => setExpanded(true)}
+            onMouseMove={() => setExpanded(true)}
+            onMouseLeave={() => {
+              // Avoid setting expanded to false when interacting with a toast, e.g. swiping
+              if (!interacting) {
+                setExpanded(false);
+              }
+            }}
+            onPointerDown={(event) => {
+              const isNotDismissible =
+                event.target instanceof HTMLElement && event.target.dataset.dismissible === 'false';
+
+              if (isNotDismissible) return;
+              setInteracting(true);
+            }}
+            onPointerUp={() => setInteracting(false)}
+          >
+            {toasts
+              .filter((toast) => (!toast.position && index === 0) || toast.position === position)
+              .map((toast, index) => (
+                <Toast
+                  key={toast.id}
+                  icons={icons}
+                  index={index}
+                  toast={toast}
+                  defaultRichColors={richColors}
+                  duration={toastOptions?.duration ?? duration}
+                  className={toastOptions?.className}
+                  descriptionClassName={toastOptions?.descriptionClassName}
+                  invert={invert}
+                  visibleToasts={visibleToasts}
+                  closeButton={toastOptions?.closeButton ?? closeButton}
+                  interacting={interacting}
+                  position={position}
+                  style={toastOptions?.style}
+                  unstyled={toastOptions?.unstyled}
+                  classNames={toastOptions?.classNames}
+                  cancelButtonStyle={toastOptions?.cancelButtonStyle}
+                  actionButtonStyle={toastOptions?.actionButtonStyle}
+                  removeToast={removeToast}
+                  toasts={toasts.filter((t) => t.position == toast.position)}
+                  heights={heights.filter((h) => h.position == toast.position)}
+                  setHeights={setHeights}
+                  expandByDefault={expand}
+                  gap={gap}
+                  loadingIcon={loadingIcon}
+                  expanded={expanded}
+                  pauseWhenPageIsHidden={pauseWhenPageIsHidden}
+                  cn={cn}
+                />
+              ))
+            }
+          </ol>
+        )
+      })}
+    </section>
   )
 }
+
+export { toast, Toaster, type ExternalToast, type ToastT, type ToasterProps }
