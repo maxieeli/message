@@ -586,7 +586,7 @@ const Toaster = (props: ToasterProps) => {
             tabIndex={-1}
             ref={listRef}
             className={className}
-            data-sonner-toaster
+            data-orient-toaster
             data-theme={actualTheme}
             data-y-position={y}
             data-x-position={x}
